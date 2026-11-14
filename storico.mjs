@@ -158,13 +158,33 @@ for (let i = 0; i < ids.length; i++) {
   });
 }
 
-/* Normale e olografica: nello stesso giocatore e rarita', l'id piu' basso e' la normale. */
-const gruppi = new Map();
+/*
+ * Normale e olografica: stesso giocatore e stessa rarita'. VERIFICATO il 14/11/2026
+ * su tutte le 749 coppie del pool di fut.gg: l'olografica ha il valore di vendita
+ * rapida (`g`) esattamente 1,5 volte la normale. La vecchia regola «id piu' alto =
+ * olografica» sbagliava 23 TOTW (es. Amanda Gutierres: 50599322 e' l'olografica).
+ * Si guarda tutto il pool, cosi' anche un'olografica senza la normale in vendita
+ * viene riconosciuta. Se `g` non distingue, resta la regola dell'id.
+ */
+const gMinimo = new Map();
+const gMassimo = new Map();
+const idMinimo = new Map();
+const gDi = new Map();
+for (let i = 0; i < ids.length; i++) {
+  const chiave = `${pool.r[i]}:${ids[i] % 0x1000000}`;
+  const g = Number(pool.g?.[i]) || 0;
+  gDi.set(ids[i], g);
+  gMinimo.set(chiave, Math.min(gMinimo.get(chiave) ?? Infinity, g));
+  gMassimo.set(chiave, Math.max(gMassimo.get(chiave) ?? -Infinity, g));
+  idMinimo.set(chiave, Math.min(idMinimo.get(chiave) ?? Infinity, ids[i]));
+}
 for (const c of carte) {
   const chiave = `${c.r}:${c.id % 0x1000000}`;
-  gruppi.set(chiave, Math.min(gruppi.get(chiave) ?? Infinity, c.id));
+  const g = gDi.get(c.id) ?? 0;
+  const minimo = gMinimo.get(chiave) ?? g;
+  /* Valori diversi nel gruppo: decide `g`. Tutti uguali (o mancanti): la vecchia regola dell'id. */
+  c.holo = minimo > 0 && (gMassimo.get(chiave) ?? g) > minimo ? g > minimo : idMinimo.get(chiave) !== c.id;
 }
-for (const c of carte) c.holo = gruppi.get(`${c.r}:${c.id % 0x1000000}`) !== c.id;
 
 const t = [...tieni.map(([x]) => x), minuto];
 const storico = { v: 2, quando: new Date(ora).toISOString(), t, carte };
@@ -225,7 +245,7 @@ function riassunto(serie) {
     const m = Math.floor(v.length / 2);
     return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2);
   };
-  const corte = [medianaDi(60), medianaDi(120)];
+  const corte = [medianaDi(60), medianaDi(120), medianaDi(360)]; /* 1, 2 e 6 ore (6 ore aggiunta il 14/11/2026) */
   return [adesso, Math.min(...valori), Math.max(...valori), media, valori.length, minuto - punti[0][0], fasce, daQuando,
     corte, corte.map(daQuandoPer)];
 }
