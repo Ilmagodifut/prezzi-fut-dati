@@ -195,7 +195,24 @@ function riassunto(serie) {
     const fascia = FASCE - 1 - Math.floor((minuto - quando) / (FINESTRA_MIN / FASCE));
     if (fascia >= 0 && fascia < FASCE) fasce[fascia] = p;
   }
-  return [adesso, Math.min(...valori), Math.max(...valori), media, valori.length, minuto - punti[0][0], fasce];
+  /*
+   * DA QUANTO E' OCCASIONE, per ogni soglia dell'app (-5/-10/-15/-20%).
+   * CHIESTO il 14/11/2026: ordinare le occasioni «per le piu' recenti». Si va
+   * indietro dall'ultima rilevazione finche' il prezzo resta sotto la soglia;
+   * le rilevazioni senza prezzo non interrompono. -1 = non e' occasione.
+   */
+  const daQuando = [5, 10, 15, 20].map((s) => {
+    const soglia = media * (1 - s / 100);
+    if (!(adesso > 0 && adesso <= soglia)) return -1;
+    let inizio = serie.length - 1;
+    for (let k = serie.length - 1; k >= 0; k--) {
+      if (serie[k] === 0) continue;
+      if (serie[k] > soglia) break;
+      inizio = k;
+    }
+    return Math.max(0, minuto - t[inizio]);
+  });
+  return [adesso, Math.min(...valori), Math.max(...valori), media, valori.length, minuto - punti[0][0], fasce, daQuando];
 }
 const vista = {
   v: 2,
