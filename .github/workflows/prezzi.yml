@@ -1,0 +1,91 @@
+# IL LAVORO DEI DATI DI «PREZZI FUT»
+#
+# Va in `Ilmagodifut/prezzi-fut-dati`, come `.github/workflows/prezzi.yml`.
+# La copia buona, quella che si modifica, sta in FUTMAGO/tools/prezzi-icon/lavoro/.
+#
+# SEPARATO da FUTMAGO dal 14/11/2026: prima questi file li faceva il lavoro del
+# listino di FUTMAGO (Ilmagodifut/futmago-listino). Ora quel lavoro non c'entra.
+#
+# Come il listino: ogni esecuzione resta accesa quasi sei ore, guarda il manifesto
+# di fut.gg ogni 20 secondi e rifa' i dati appena cambia (fut.gg pubblica ogni
+# 5-6 minuti, misurato il 14/11/2026). Il ramo `dati` viene rifatto a ogni giro:
+# un commit solo, sempre lo stesso peso. Quando finisce, riparte da solo.
+
+name: prezzi
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: prezzi
+  cancel-in-progress: true
+
+jobs:
+  dati:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Dati appena fut.gg aggiorna, per quasi sei ore
+        run: |
+          inizio=$(date +%s)
+          ultimo=""
+          ultima_costruzione=0
+          giro=0
+          while true; do
+            giro=$((giro + 1))
+            partenza=$(date +%s)
+            pubblicato=$(curl -s --max-time 15 https://r2.fut.gg/27/manifest.json | node -e "let t='';process.stdin.on('data',d=>t+=d).on('end',()=>{try{const m=JSON.parse(t);console.log(m['player-prices-ps5-dyn']+'/'+m['player-prices-pc-dyn'])}catch{console.log('')}})")
+            if [ -n "$pubblicato" ] && { [ "$pubblicato" != "$ultimo" ] || [ $((partenza - ultima_costruzione)) -ge 300 ]; }; then
+              echo "── giro $giro ($(date -u +%H:%M:%SZ)) fut.gg $pubblicato"
+              rm -rf prezzi uscita
+              if node prendi-prezzi.mjs prezzi && node storico.mjs prezzi promo-24h-prec.json; then
+                mkdir -p uscita
+                cp prezzi/promo-*.json uscita/
+                [ -d prezzi/storia ] && cp -r prezzi/storia uscita/
+                (
+                  set -e
+                  cd uscita
+                  git init -q
+                  git config user.name  "prezzi"
+                  git config user.email "prezzi@users.noreply.github.com"
+                  git add -A
+                  git commit -q -m "dati $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:dati
+                ) && { ultimo="$pubblicato"; ultima_costruzione=$partenza; cp prezzi/promo-24h.json promo-24h-prec.json; } \
+                  || echo "pubblicazione fallita, riprovo al prossimo giro"
+              else
+                echo "fut.gg non ha risposto, riprovo al prossimo giro"
+              fi
+            fi
+            [ $(( $(date +%s) - inizio )) -gt $((5 * 3600 + 30 * 60)) ] && break
+            attesa=$(( 20 - ( $(date +%s) - partenza ) ))
+            [ $attesa -gt 0 ] && sleep $attesa
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Quando finisce, o GitHub lo spegne, ne parte subito un altro
+      # (se non ce n'e' gia' uno acceso). Stesso schema del listino di FUTMAGO.
+      - name: Fa ripartire il lavoro
+        if: ${{ always() }}
+        run: |
+          altri=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow prezzi.yml --json databaseId,status --jq "[.[] | select(.databaseId != ${GITHUB_RUN_ID} and (.status == \"in_progress\" or .status == \"queued\" or .status == \"pending\"))] | length")
+          if [ "${altri:-0}" -gt 0 ]; then
+            echo "C'e' gia' un lavoro acceso: non ne parte un altro"
+          else
+            gh workflow run prezzi.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
