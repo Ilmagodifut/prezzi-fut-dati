@@ -201,9 +201,9 @@ function riassunto(serie) {
    * indietro dall'ultima rilevazione finche' il prezzo resta sotto la soglia;
    * le rilevazioni senza prezzo non interrompono. -1 = non e' occasione.
    */
-  const daQuando = [5, 10, 15, 20].map((s) => {
-    const soglia = media * (1 - s / 100);
-    if (!(adesso > 0 && adesso <= soglia)) return -1;
+  const daQuandoPer = (rif) => [5, 10, 15, 20].map((s) => {
+    const soglia = rif * (1 - s / 100);
+    if (!(rif > 0 && adesso > 0 && adesso <= soglia)) return -1;
     let inizio = serie.length - 1;
     for (let k = serie.length - 1; k >= 0; k--) {
       if (serie[k] === 0) continue;
@@ -212,7 +212,22 @@ function riassunto(serie) {
     }
     return Math.max(0, minuto - t[inizio]);
   });
-  return [adesso, Math.min(...valori), Math.max(...valori), media, valori.length, minuto - punti[0][0], fasce, daQuando];
+  const daQuando = daQuandoPer(media);
+  /*
+   * MEDIANA DELL'ULTIMA ORA E DELLE ULTIME 2 ORE. CHIESTO il 14/11/2026: con la
+   * mediana di 24 ore un crollo che resta sembra un'occasione per ore; con 1-2
+   * ore la mediana si adegua presto e restano le carte scese di colpo.
+   * Servono almeno 4 rilevazioni nella finestra, se no 0 (non si giudica).
+   */
+  const medianaDi = (finestra) => {
+    const v = punti.filter(([q]) => minuto - q <= finestra).map(([, p]) => p).sort((a, b) => a - b);
+    if (v.length < 4) return 0;
+    const m = Math.floor(v.length / 2);
+    return v.length % 2 ? v[m] : Math.round((v[m - 1] + v[m]) / 2);
+  };
+  const corte = [medianaDi(60), medianaDi(120)];
+  return [adesso, Math.min(...valori), Math.max(...valori), media, valori.length, minuto - punti[0][0], fasce, daQuando,
+    corte, corte.map(daQuandoPer)];
 }
 const vista = {
   v: 2,
