@@ -221,7 +221,8 @@ function riassunto(serie) {
    * indietro dall'ultima rilevazione finche' il prezzo resta sotto la soglia;
    * le rilevazioni senza prezzo non interrompono. -1 = non e' occasione.
    */
-  const daQuandoPer = (rif) => [5, 10, 15, 20].map((s) => {
+  // 22/11/2026: aggiunto il -8% IN FONDO (5, 10, 15, 20, 8), cosi' gli indici di prima non cambiano.
+  const daQuandoPer = (rif) => [5, 10, 15, 20, 8].map((s) => {
     const soglia = rif * (1 - s / 100);
     if (!(rif > 0 && adesso > 0 && adesso <= soglia)) return -1;
     let inizio = serie.length - 1;
